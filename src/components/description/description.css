@@ -1,0 +1,20 @@
+html,
+* {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+body {
+  font-family: 'Inter UI', sans-serif;
+  font-size: 12px;
+  line-height: 1.4em;
+  background: #f5f5f5;
+  color: #111111;
+  min-width: 230px;
+  max-width: 1100px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 300;
+}

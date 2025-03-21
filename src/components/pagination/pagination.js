@@ -7,7 +7,7 @@ const Paginations = ({ currentPage, totalPages, onPageChange }) => {
     <Pagination
       align="center"
       showSizeChanger={false}
-      total={totalPages * 20}
+      total={totalPages}
       current={currentPage}
       pageSize={20}
       onChange={onPageChange}

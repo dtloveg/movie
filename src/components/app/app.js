@@ -20,6 +20,8 @@ export default class App extends Component {
     ratedMovies: {},
     activeTab: '1',
     guestSessionId: null,
+    totalMoviesCount: 0,
+    moviesToDisplay: [],
   }
 
   apiService = new ApiService()
@@ -29,7 +31,9 @@ export default class App extends Component {
       const genresData = await this.apiService.getGenres()
       this.setState({ genres: genresData.genres })
       const guestSessionId = await this.apiService.createGuestSession()
-      this.setState({ guestSessionId })
+      this.setState({ guestSessionId }, () => {
+        this.getCurrentMovies()
+      })
       this.loadRatedMovies()
     } catch (error) {
       console.error('Error fetching genres or creating guest session:', error)
@@ -40,32 +44,6 @@ export default class App extends Component {
     const ratedMovies = JSON.parse(localStorage.getItem('ratedMovies')) || {}
     this.setState({ ratedMovies })
   }
-
-  handleQueryChange = async (query) => {
-    this.setState({ query, currentPage: 1, noResults: false })
-    await this.fetchTotalPages(query)
-    await this.fetchMovies(query, 1)
-  }
-
-  fetchTotalPages = async (query) => {
-    if (!query.trim()) {
-      this.setState({ totalPages: 0 })
-      return
-    }
-    try {
-      const totalPages = await this.apiService.getPages(query)
-      this.setState({ totalPages })
-      console.log(totalPages)
-    } catch (error) {
-      console.error('Error fetching total pages:', error)
-    }
-  }
-
-  handlePageChange = async (page) => {
-    this.setState({ currentPage: page, loading: true, noResults: false })
-    await this.fetchMovies(this.state.query, page)
-  }
-
   fetchMovies = async (query, page) => {
     if (!query.trim()) {
       this.setState({ movies: [], loading: false, totalPages: 0 })
@@ -73,22 +51,71 @@ export default class App extends Component {
     }
     this.setState({ loading: true })
     try {
-      const movies = await this.apiService.getDataForPage(query, page)
+      const { movies, totalCount } = await this.apiService.getDataForPage(query, page)
       if (movies.length === 0) {
-        this.setState({ movies: [], noResults: true, loading: false })
+        this.setState({ movies: [], noResults: true, loading: false, totalMoviesCount: 0 })
       } else {
         const moviesWithRatings = movies.map((movie) => ({
           ...movie,
           rating: this.state.ratedMovies[movie.id] || 0,
         }))
-        this.setState({ movies: moviesWithRatings, loading: false, error: false, noResults: false })
+
+        this.setState(
+          {
+            movies: moviesWithRatings,
+            loading: false,
+            error: false,
+            noResults: false,
+            totalMoviesCount: totalCount,
+          },
+          () => {
+            this.getCurrentMovies()
+          }
+        )
       }
     } catch {
       this.setState({ loading: false, error: true })
     }
   }
-  handleTabChange = (key) => {
-    this.setState({ activeTab: key, currentPage: 1 })
+
+  handleQueryChange = async (query) => {
+    this.setState({ query, currentPage: 1, noResults: false }, async () => {
+      await this.fetchMovies(query, 1)
+      await this.getCurrentMovies()
+    })
+  }
+
+  getCurrentMovies = async () => {
+    const { activeTab, guestSessionId, currentPage, ratedMovies } = this.state
+
+    if (activeTab === '2' && guestSessionId) {
+      const totalRatedMoviesCount = Object.keys(ratedMovies).length
+      if (totalRatedMoviesCount === 0) {
+        this.setState({ moviesToDisplay: [] })
+        return
+      }
+
+      try {
+        const fetchedRatedMovies = await this.apiService.getRatedMovies(guestSessionId, currentPage)
+        const moviesArray = fetchedRatedMovies.results || []
+
+        if (Array.isArray(moviesArray)) {
+          const moviesWithRatings = moviesArray.map((movie) => ({
+            ...movie,
+            rating: this.state.ratedMovies[movie.id] || 0,
+          }))
+          this.setState({ moviesToDisplay: moviesWithRatings })
+        } else {
+          console.error('Expected moviesArray to be an array, but got:', moviesArray)
+          this.setState({ moviesToDisplay: [], error: true })
+        }
+      } catch (error) {
+        console.error('Error fetching rated movies:', error)
+        this.setState({ error: true, moviesToDisplay: [] })
+      }
+    } else {
+      this.setState({ moviesToDisplay: this.state.movies })
+    }
   }
 
   handleRateChange = async (movieId, rating) => {
@@ -100,21 +127,18 @@ export default class App extends Component {
         [movieId]: rating,
       }
 
-      const movieToStore = {
-        id: movieData.id,
-        title: movieData.title,
-        poster_path: movieData.poster_path,
-        release_date: movieData.release_date,
-        genre_ids: movieData.genre_ids,
-        overview: movieData.overview,
-        vote_average: movieData.vote_average,
-        rating: rating,
-      }
-
       localStorage.setItem('ratedMovies', JSON.stringify(newRatedMovies))
-      localStorage.setItem(`movie_${movieId}`, JSON.stringify(movieToStore))
 
       this.setState({ ratedMovies: newRatedMovies })
+      this.setState((prevState) => {
+        const updatedMovies = prevState.movies.map((movie) => {
+          if (movie.id === movieId) {
+            return { ...movie, rating: rating }
+          }
+          return movie
+        })
+        return { movies: updatedMovies }
+      })
 
       if (this.state.guestSessionId) {
         try {
@@ -126,34 +150,29 @@ export default class App extends Component {
     }
   }
 
-  getCurrentMovies = () => {
-    const { activeTab, ratedMovies, movies, currentPage } = this.state
-    const moviesPerPage = 20
+  handleTabChange = async (key) => {
+    this.setState({ activeTab: key, currentPage: 1, loading: true }, async () => {
+      await this.getCurrentMovies()
+      this.setState({ loading: false })
+    })
+  }
 
-    if (activeTab === '1') {
-      return movies.slice((currentPage - 1) * moviesPerPage, currentPage * moviesPerPage)
-    } else {
-      const ratedMoviesArray = Object.keys(ratedMovies)
-        .map((id) => {
-          const movie = JSON.parse(localStorage.getItem(`movie_${id}`))
-          return movie ? { ...movie, rating: ratedMovies[id] } : null
-        })
-        .filter((movie) => movie !== null)
-
-      return ratedMoviesArray.slice((currentPage - 1) * moviesPerPage, currentPage * moviesPerPage)
-    }
+  handlePageChange = async (page) => {
+    this.setState({ currentPage: page, loading: true, noResults: false }, async () => {
+      await this.fetchMovies(this.state.query, page)
+      this.setState({ loading: false })
+    })
   }
 
   render() {
-    const { currentPage, loading, error, noResults, ratedMovies, activeTab } = this.state
+    const { currentPage, loading, error, noResults, ratedMovies, activeTab, totalMoviesCount } = this.state
 
-    const moviesToDisplay = this.getCurrentMovies()
-    const totalMoviesCount = activeTab === '1' ? this.state.totalPages : Object.keys(ratedMovies).length / 20
-    const totalPagesToShow = Math.ceil(totalMoviesCount)
+    const totalRatedMoviesCount = Object.keys(ratedMovies).length
+    const totalPagesToShow = activeTab === '1' ? totalMoviesCount : totalRatedMoviesCount
 
     return (
       <>
-        <Header onQueryChange={this.handleQueryChange} onTabChange={this.handleTabChange} />
+        <Header onQueryChange={this.handleQueryChange} onTabChange={this.handleTabChange} activeTab={activeTab} />
         {loading && (
           <div style={{ textAlign: 'center', marginTop: '20px' }}>
             <Spin size="large" />
@@ -166,20 +185,21 @@ export default class App extends Component {
             style={{ maxWidth: '1010px', margin: '20px auto' }}
           />
         )}
-        {noResults && (
+        {noResults && activeTab === '2' && (
           <Alert
             type="info"
-            message={'Увы, по Вашему запросу ничего не найдено. Попробуйте изменить запрос.'}
+            message={'У вас пока нет оцененных фильмов.'}
             style={{ maxWidth: '1010px', textAlign: 'center' }}
           />
         )}
         <CardList
-          movies={moviesToDisplay}
+          movies={this.state.moviesToDisplay}
           loading={loading}
           error={error}
           onRateChange={this.handleRateChange}
           ratedMovies={ratedMovies}
         />
+
         {totalPagesToShow > 0 && (
           <Paginations currentPage={currentPage} totalPages={totalPagesToShow} onPageChange={this.handlePageChange} />
         )}

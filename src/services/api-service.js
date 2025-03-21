@@ -1,6 +1,8 @@
 export default class ApiService {
   _apiBase = 'https://api.themoviedb.org/3/search/movie'
   apiKey = 'c31e1dbe66b5f77945e15adf0572ef6f'
+  apiToken =
+    'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJjMzFlMWRiZTY2YjVmNzc5NDVlMTVhZGYwNTcyZWY2ZiIsIm5iZiI6MTc0MTUyMTYxOS4xMTUsInN1YiI6IjY3Y2Q4MmQzMjc5NGIwZDU5ODJhNzQ0YyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.KtWp7u-0IAlPPIqFCsKjJvmW4sAHn19JjRX-ShjMidE'
 
   async getMovies(url) {
     const res = await fetch(`${this._apiBase}${url}`)
@@ -9,25 +11,17 @@ export default class ApiService {
     }
     return await res.json()
   }
-  async getMovie(query) {
-    const res = await this.getMovies(`?query=${query}&api_key=${this.apiKey}`)
-    if (!res || !res.results || res.results.length === 0) {
-      throw new Error('Фильмы не найдены')
-    }
-    return res.results.filter((movie) => movie.title.toLowerCase().includes(query.toLowerCase()))
-  }
-
-  async getPages(query) {
-    const res = await this.getMovies(`?query=${query}&api_key=${this.apiKey}`)
-    return res.total_pages
-  }
 
   async getDataForPage(query, page) {
     const res = await this.getMovies(`?query=${query}&api_key=${this.apiKey}&page=${page}`)
+    console.log(`API response for query: ${query}, page: ${page}`, res)
     if (!res || !res.results) {
       throw new Error('Что-то пошло не так')
     }
-    return res.results
+    return {
+      movies: res.results,
+      totalCount: res.total_results,
+    }
   }
 
   async getGenres() {
@@ -50,11 +44,22 @@ export default class ApiService {
     return data.guest_session_id
   }
 
-  async getMovieRatings(guestSessionId, movieId) {
-    const res = await this.fetchJson(
-      `${this._apiBase}/movie/${movieId}/rating?api_key=${this.apiKey}&guest_session_id=${guestSessionId}`
+  async getRatedMovies(guestSessionId, currentPage) {
+    const options = {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        Authorization: `Bearer ${this.apiToken}`,
+      },
+    }
+    const res = await fetch(
+      `https://api.themoviedb.org/3/guest_session/${guestSessionId}/rated/movies?language=en-US&page=${currentPage}&sort_by=created_at.asc`,
+      options
     )
-    return res
+    if (!res.ok) {
+      throw new Error(`Could not fetch rated movies, received ${res.status}`)
+    }
+    return await res.json()
   }
 
   async rateMovie(guestSessionId, movieId, rating) {
@@ -63,7 +68,7 @@ export default class ApiService {
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json;charset=utf-8',
         },
         body: JSON.stringify({ value: rating }),
       }

@@ -44,11 +44,12 @@ export default class Header extends Component {
       label: 'Rated',
     },
   ]
+
   render() {
     return (
       <header style={{ backgroundColor: 'white', padding: 32, paddingBottom: 0, maxWidth: 1010 }}>
-        <Tabs centered activeKey={this.state.activeTab} items={this.items} onChange={this.onChange} />
-        {this.state.activeTab === '1' && (
+        <Tabs centered activeKey={this.props.activeTab} items={this.items} onChange={this.onChange} />
+        {this.props.activeTab === '1' && (
           <Input
             placeholder="Type to search"
             onKeyUp={this.onKeyUp}
@@ -71,4 +72,5 @@ Header.propTypes = {
   onKeyUp: propTypes.func,
   onQueryChange: propTypes.func,
   onTabChange: propTypes.func,
+  activeTab: propTypes.string,
 }
